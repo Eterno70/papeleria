@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  
+  th, td {
+    border: 1px solid #000;
+    padding: 4px 6px;
+    text-align: left;
+  }
+  
+  th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold;
+  }
+  
+  .print-break {
+    page-break-before: always;
+  }
+  
+  .print-avoid-break {
+    page-break-inside: avoid;
+  }
+}
+
+/* Asegura que los toast de react-hot-toast estén siempre por encima de los modales */
+.react-hot-toast {
+  z-index: 99999 !important;
+}
