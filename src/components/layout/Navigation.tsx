@@ -6,7 +6,8 @@ import {
   FileText, 
   Calendar,
   BarChart3,
-  Upload
+  Upload,
+  Users
 } from 'lucide-react';
 import { ViewType } from '../Dashboard';
 
@@ -23,6 +24,7 @@ const navigationItems = [
   { id: 'control-card', label: 'Tarjeta de Control', icon: Calendar },
   { id: 'papeleria-nueva', label: 'Papelería Nueva', icon: BarChart3 },
   { id: 'import-export', label: 'Importar/Exportar', icon: Upload },
+  { id: 'usuarios', label: 'Usuarios', icon: Users },
 ];
 
 const Navigation = ({ currentView, onViewChange }: NavigationProps) => {

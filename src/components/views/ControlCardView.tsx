@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Printer, FileDown, Calendar, Filter, X, Pencil, Trash } from 'lucide-react';
+import { Printer, FileDown, Calendar, Pencil, Trash } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { formatCurrency, formatDate } from '../../utils/format';
-import { generateHTMLForPDF, downloadHTML, printPage, generateTableHTML } from '../../utils/export';
+import { generateHTMLForPDF, downloadHTML, generateTableHTML } from '../../utils/export';
 import toast from 'react-hot-toast';
 import ReactModal from 'react-modal';
 
@@ -120,118 +120,289 @@ const ControlCardView = () => {
     setControlCardData(saldoInicialRow ? [saldoInicialRow, ...cardData] : cardData);
   };
 
-  const clearFilters = () => {
-    setSelectedArticle('');
-    setSelectedMonth('');
-    setSelectedYear('');
-    setFilters({
-      description: ''
-    });
+  // (Se retiró clearFilters para evitar warning de no uso)
+
+  // Helper para imprimir HTML generado en nueva pestaña
+  const openAndPrint = (html: string) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    // Pequeño delay para asegurar que el contenido cargue antes de imprimir
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 300);
   };
 
   const handlePrint = () => {
-    if (!selectedArticle) {
-      toast.error('Por favor seleccione un artículo para imprimir');
+    // Si hay artículo seleccionado, usamos el contenido específico existente
+    if (selectedArticle) {
+      const html = generatePrintableContent();
+      openAndPrint(html);
       return;
     }
-    printPage();
-  };
 
-  const handleExportPDF = () => {
-    if (!selectedArticle) {
-      toast.error('Por favor seleccione un artículo para exportar');
+    // Si NO hay artículo seleccionado, generamos impresión para TODOS los artículos
+    if (!articles || articles.length === 0) {
+      toast.error('No hay artículos disponibles para imprimir');
       return;
     }
-    
-    const article = articles.find(a => a.id === parseInt(selectedArticle));
-    if (!article) return;
-    
-    const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
-    const rows = controlCardData.map(item => {
-      const isEntry = item.tipo === 'Entrada';
-      const totalValue = item.cantidad * item.costo;
-      const existenceValue = item.balance * article.costo;
-      
-      return [
-        item.fecha,
-        item.descripcion,
-        isEntry ? item.cantidad.toString() : '0',
-        isEntry ? formatCurrency(item.costo) : formatCurrency(0),
-        isEntry ? formatCurrency(totalValue) : formatCurrency(0),
-        !isEntry ? item.cantidad.toString() : '0',
-        !isEntry ? formatCurrency(item.costo) : formatCurrency(0),
-        !isEntry ? formatCurrency(totalValue) : formatCurrency(0),
-        item.balance.toString(),
-        formatCurrency(article.costo),
-        formatCurrency(existenceValue)
-      ];
+
+    // Agrupar datos por artículo usando los datos ya calculados en controlCardData
+    const grouped: Record<number, any[]> = {};
+    controlCardData.forEach((item: any) => {
+      const artId = item.article?.id ?? item.id_articulo;
+      if (!grouped[artId]) grouped[artId] = [];
+      grouped[artId].push(item);
     });
-    
-    const tableHTML = generateTableHTML(headers, rows);
-    const htmlContent = generateHTMLForPDF(`Tarjeta de Control - ${article.nombre}`, tableHTML, {
-      articleId: selectedArticle,
+
+    const sections = Object.keys(grouped)
+      .map(idStr => parseInt(idStr))
+      .sort((a, b) => a - b)
+      .map(artId => {
+        const art = articles.find(a => a.id === artId);
+        if (!art) return '';
+        const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
+        const rows = grouped[artId].map((item: any) => {
+          const isEntry = item.tipo === 'Entrada';
+          const totalValue = item.cantidad * (item.costo > 0 ? item.costo : item.costoUnit);
+          const existenceValue = item.balance * item.costoUnit;
+          return [
+            item.fecha,
+            item.descripcion,
+            isEntry ? item.cantidad.toString() : '0',
+            isEntry ? formatCurrency(item.costo) : formatCurrency(0),
+            isEntry ? formatCurrency(totalValue) : formatCurrency(0),
+            !isEntry ? item.cantidad.toString() : '0',
+            !isEntry ? formatCurrency(item.costo) : formatCurrency(0),
+            !isEntry ? formatCurrency(totalValue) : formatCurrency(0),
+            item.balance.toString(),
+            formatCurrency(item.costoUnit),
+            formatCurrency(existenceValue)
+          ];
+        });
+        const table = generateTableHTML(headers, rows);
+        return `
+          <div style="margin-top:12px; font-size:12px; font-weight:bold;">Artículo: ${art.nombre}</div>
+          ${table}
+        `;
+      })
+      .join('\n');
+
+    const htmlContent = generateHTMLForPDF('Tarjeta de Control - Todos los artículos', sections, {
+      articleId: '',
       dateFrom: selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}-01` : '',
       dateTo: selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}-31` : '',
       ...filters
     });
-    
-    const filename = `tarjeta_control_${article.nombre.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.html`;
+
+    openAndPrint(htmlContent);
+  };
+
+  const handleExportPDF = () => {
+    // Exportación por artículo (comportamiento existente)
+    if (selectedArticle) {
+      const article = articles.find(a => a.id === parseInt(selectedArticle));
+      if (!article) return;
+
+      const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
+      const rows = controlCardData.map(item => {
+        const isEntry = item.tipo === 'Entrada';
+        const totalValue = item.cantidad * (item.costo > 0 ? item.costo : item.costoUnit);
+        const existenceValue = item.balance * item.costoUnit;
+        
+        return [
+          item.fecha,
+          item.descripcion,
+          isEntry ? item.cantidad.toString() : '0',
+          isEntry ? formatCurrency(item.costo) : formatCurrency(0),
+          isEntry ? formatCurrency(totalValue) : formatCurrency(0),
+          !isEntry ? item.cantidad.toString() : '0',
+          !isEntry ? formatCurrency(item.costo) : formatCurrency(0),
+          !isEntry ? formatCurrency(totalValue) : formatCurrency(0),
+          item.balance.toString(),
+          formatCurrency(item.costoUnit),
+          formatCurrency(existenceValue)
+        ];
+      });
+      
+      const tableHTML = generateTableHTML(headers, rows);
+      const htmlContent = generateHTMLForPDF(`Tarjeta de Control - ${article.nombre}`, tableHTML, {
+        articleId: selectedArticle,
+        dateFrom: selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}-01` : '',
+        dateTo: selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}-31` : '',
+        ...filters
+      });
+      
+      const filename = `tarjeta_control_${article.nombre.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.html`;
+      downloadHTML(htmlContent, filename);
+      toast.success('Tarjeta de control exportada a PDF/HTML');
+      return;
+    }
+
+    // Exportación para TODOS los artículos (sin selección)
+    if (!articles || articles.length === 0) {
+      toast.error('No hay artículos para exportar');
+      return;
+    }
+
+    const grouped: Record<number, any[]> = {};
+    controlCardData.forEach((item: any) => {
+      const artId = item.article?.id ?? item.id_articulo;
+      if (!grouped[artId]) grouped[artId] = [];
+      grouped[artId].push(item);
+    });
+
+    const sections = Object.keys(grouped)
+      .map(idStr => parseInt(idStr))
+      .sort((a, b) => a - b)
+      .map(artId => {
+        const art = articles.find(a => a.id === artId);
+        if (!art) return '';
+        const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
+        const rows = grouped[artId].map((item: any) => {
+          const isEntry = item.tipo === 'Entrada';
+          const totalValue = item.cantidad * (item.costo > 0 ? item.costo : item.costoUnit);
+          const existenceValue = item.balance * item.costoUnit;
+          return [
+            item.fecha,
+            item.descripcion,
+            isEntry ? item.cantidad.toString() : '0',
+            isEntry ? formatCurrency(item.costo) : formatCurrency(0),
+            isEntry ? formatCurrency(totalValue) : formatCurrency(0),
+            !isEntry ? item.cantidad.toString() : '0',
+            !isEntry ? formatCurrency(item.costo) : formatCurrency(0),
+            !isEntry ? formatCurrency(totalValue) : formatCurrency(0),
+            item.balance.toString(),
+            formatCurrency(item.costoUnit),
+            formatCurrency(existenceValue)
+          ];
+        });
+        const table = generateTableHTML(headers, rows);
+        return `
+          <div style=\"margin-top:12px; font-size:12px; font-weight:bold;\">Artículo: ${art.nombre}</div>
+          ${table}
+        `;
+      })
+      .join('\n');
+
+    const htmlContent = generateHTMLForPDF('Tarjeta de Control - Todos los artículos', sections, {
+      articleId: '',
+      dateFrom: selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}-01` : '',
+      dateTo: selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}-31` : '',
+      ...filters
+    });
+
+    const filename = `tarjeta_control_todos_${new Date().toISOString().split('T')[0]}.html`;
     downloadHTML(htmlContent, filename);
-    toast.success('Tarjeta de control exportada a PDF/HTML');
+    toast.success('Tarjeta de control (todos los artículos) exportada a PDF/HTML');
   };
 
   // Definir función simpleCurrency localmente
   const simpleCurrency = (amount: number): string => `$${amount.toFixed(2)}`;
 
   const handleExportCSV = () => {
-    if (!selectedArticle) {
-      toast.error('Por favor seleccione un artículo para exportar');
+    // CSV por artículo
+    if (selectedArticle) {
+      const article = articles.find(a => a.id === parseInt(selectedArticle));
+      if (!article) return;
+      const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
+      const rows = controlCardData.map(item => {
+        const isEntry = item.tipo === 'Entrada';
+        const totalValue = item.cantidad * (item.costo > 0 ? item.costo : item.costoUnit);
+        const existenceValue = item.balance * item.costoUnit;
+        return [
+          item.fecha,
+          item.descripcion,
+          isEntry ? item.cantidad.toString() : '0',
+          isEntry ? simpleCurrency(item.costo) : simpleCurrency(0),
+          isEntry ? simpleCurrency(totalValue) : simpleCurrency(0),
+          !isEntry ? item.cantidad.toString() : '0',
+          !isEntry ? simpleCurrency(item.costo) : simpleCurrency(0),
+          !isEntry ? simpleCurrency(totalValue) : simpleCurrency(0),
+          item.balance.toString(),
+          simpleCurrency(item.costoUnit),
+          simpleCurrency(existenceValue)
+        ];
+      });
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `tarjeta_control_${article.nombre.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Tarjeta de control exportada a CSV');
       return;
     }
-    
-    const article = articles.find(a => a.id === parseInt(selectedArticle));
-    if (!article) return;
-    
-    const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
-    const rows = controlCardData.map(item => {
-      const isEntry = item.tipo === 'Entrada';
-      const totalValue = item.cantidad * item.costo;
-      const existenceValue = item.balance * article.costo;
-      
-      return [
-        item.fecha,
-        item.descripcion,
-        isEntry ? item.cantidad.toString() : '0',
-        isEntry ? simpleCurrency(item.costo) : simpleCurrency(0),
-        isEntry ? simpleCurrency(totalValue) : simpleCurrency(0),
-        !isEntry ? item.cantidad.toString() : '0',
-        !isEntry ? simpleCurrency(item.costo) : simpleCurrency(0),
-        !isEntry ? simpleCurrency(totalValue) : simpleCurrency(0),
-        item.balance.toString(),
-        simpleCurrency(article.costo),
-        simpleCurrency(existenceValue)
-      ];
+
+    // CSV para TODOS los artículos
+    if (!articles || articles.length === 0) {
+      toast.error('No hay artículos para exportar');
+      return;
+    }
+    const grouped: Record<number, any[]> = {};
+    controlCardData.forEach((item: any) => {
+      const artId = item.article?.id ?? item.id_articulo;
+      if (!grouped[artId]) grouped[artId] = [];
+      grouped[artId].push(item);
     });
-    
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-    
+
+    const headers = ['Fecha', 'Descripción', 'Entrada Cant.', 'Entrada Costo', 'Entrada Total', 'Salida Cant.', 'Salida Costo', 'Salida Total', 'Existencia', 'Costo Unit.', 'Total'];
+    const parts: string[] = [];
+    Object.keys(grouped)
+      .map(idStr => parseInt(idStr))
+      .sort((a, b) => a - b)
+      .forEach(artId => {
+        const art = articles.find(a => a.id === artId);
+        if (!art) return;
+        parts.push(`"Artículo: ${art.nombre}"`);
+        parts.push(headers.join(','));
+        grouped[artId].forEach((item: any) => {
+          const isEntry = item.tipo === 'Entrada';
+          const totalValue = item.cantidad * (item.costo > 0 ? item.costo : item.costoUnit);
+          const existenceValue = item.balance * item.costoUnit;
+          const row = [
+            item.fecha,
+            item.descripcion,
+            isEntry ? item.cantidad.toString() : '0',
+            isEntry ? simpleCurrency(item.costo) : simpleCurrency(0),
+            isEntry ? simpleCurrency(totalValue) : simpleCurrency(0),
+            !isEntry ? item.cantidad.toString() : '0',
+            !isEntry ? simpleCurrency(item.costo) : simpleCurrency(0),
+            !isEntry ? simpleCurrency(totalValue) : simpleCurrency(0),
+            item.balance.toString(),
+            simpleCurrency(item.costoUnit),
+            simpleCurrency(existenceValue)
+          ];
+          parts.push(row.map(cell => `"${cell}"`).join(','));
+        });
+        // Línea en blanco entre artículos
+        parts.push('');
+      });
+
+    const csvContent = parts.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-    
     link.setAttribute('href', url);
-    link.setAttribute('download', `tarjeta_control_${article.nombre.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `tarjeta_control_todos_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
-    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
     URL.revokeObjectURL(url);
-    toast.success('Tarjeta de control exportada a CSV');
+    toast.success('Tarjeta de control (todos los artículos) exportada a CSV');
   };
 
   const printControlCard = () => {
@@ -456,7 +627,7 @@ const ControlCardView = () => {
         >
           <div className="p-6 border-b border-gray-200">
             <h3 className="font-semibold text-gray-800 text-lg">
-              Tarjeta de Control - {articles.find(a => a.id === parseInt(selectedArticle))?.nombre}
+              Tarjeta de Control - {articles.find(a => a.id === parseInt(selectedArticle))?.nombre || 'Todos los artículos'}
             </h3>
             <p className="text-sm text-gray-600 mt-1">
               Mostrando {controlCardData.length} movimientos
@@ -640,6 +811,7 @@ const ControlCardView = () => {
         <div className="flex gap-2 mt-6">
           <button
             onClick={async () => {
+              if (!deleteConfirm?.movement) return;
               setDeleteLoading(true);
               try {
                 await deleteMovement(deleteConfirm.movement.id);

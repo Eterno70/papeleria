@@ -9,8 +9,9 @@ import ExistenciasView from './views/ExistenciasView';
 import ControlCardView from './views/ControlCardView';
 import ImportExportView from './views/ImportExportView';
 import PapeleriaNuevaView from './views/PapeleriaNuevaView';
+import UsuariosView from './views/UsuariosView';
 
-export type ViewType = 'dashboard' | 'articles' | 'movements' | 'existencias' | 'control-card' | 'papeleria-nueva' | 'import-export';
+export type ViewType = 'dashboard' | 'articles' | 'movements' | 'existencias' | 'control-card' | 'papeleria-nueva' | 'import-export' | 'usuarios';
 
 const Dashboard = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -24,6 +25,7 @@ const Dashboard = () => {
       'control-card': ControlCardView,
       'papeleria-nueva': PapeleriaNuevaView,
       'import-export': ImportExportView,
+      'usuarios': UsuariosView,
     };
 
     const ViewComponent = viewComponents[currentView];
