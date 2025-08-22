@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabaseClient } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import bcrypt from 'bcryptjs';
 
 interface User {
   id: string;
@@ -40,17 +41,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true);
-      
-      // Verificar conexión a Supabase primero
-      const { data: testData, error: testError } = await supabaseClient
-        .from('usuarios')
-        .select('count', { count: 'exact', head: true });
-      
-      if (testError) {
-        console.error('Error de conexión a Supabase:', testError);
-        toast.error('Error de conexión a la base de datos');
-        return false;
-      }
 
       // Buscar usuario en Supabase
       const { data: userData, error: userError } = await supabaseClient
@@ -66,15 +56,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
 
-      // Verificar contraseña usando la función de Supabase
-      const { data: passwordCheck, error: passwordError } = await supabaseClient
-        .rpc('verify_password', {
-          password: password,
-          hash: userData.password_hash
-        });
-
-      if (passwordError || !passwordCheck) {
-        console.error('Error verificando contraseña:', passwordError);
+      // Verificar contraseña en cliente con bcryptjs (evita incompatibilidades de pgcrypto)
+      const passwordCheck = await bcrypt.compare(password, userData.password_hash);
+      if (!passwordCheck) {
         toast.error('Usuario o contraseña incorrectos');
         return false;
       }
